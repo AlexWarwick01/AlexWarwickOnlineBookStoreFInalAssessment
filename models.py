@@ -1,3 +1,4 @@
+from html import escape
 class Book:
     def __init__(self, title, category, price, image):
         self.title = title
@@ -71,14 +72,14 @@ class Cart:
     def is_empty(self):
         return len(self.items) == 0
 
-
+# Adds HTML escaping for user inputs to prevent XSS
 class User:
     """User account management class"""
     def __init__(self, email, password, name="", address=""):
         self.email = email
         self.password = password
-        self.name = name
-        self.address = address
+        self.name = escape(name)
+        self.address = escape(address)
         self.orders = []
         self.temp_data = []
         self.cache = {}
@@ -152,19 +153,19 @@ class PaymentGateway:
 
 class EmailService:
     """Mock email service for sending order confirmations"""
-    
+# Line 161-167 Have been changed due to AttributeError: 'dict' object has no attribute
     @staticmethod
     def send_order_confirmation(user_email, order):
         """Mock email sending - just prints to console in this implementation"""
         print(f"\n=== EMAIL SENT ===")
         print(f"To: {user_email}")
-        print(f"Subject: Order Confirmation - Order #{order.order_id}")
-        print(f"Order Date: {order.order_date}")
-        print(f"Total Amount: ${order.total_amount:.2f}")
+        print(f"Subject: Order Confirmation - Order #{order['order_id']}")
+        print(f"Order Date: {order['order_date']}")
+        print(f"Total Amount: ${order['total_amount']:.2f}")
         print(f"Items:")
-        for item in order.items:
-            print(f"  - {item.book.title} x{item.quantity} @ ${item.book.price:.2f}")
-        print(f"Shipping Address: {order.shipping_info.get('address', 'N/A')}")
+        for item in order['items']:
+            print(f"  - {item['title']} x{item['quantity']} @ ${item['price']:.2f}")
+        print(f"Shipping Address: {order['shipping_info'].get('address', 'N/A')}")
         print(f"==================\n")
         
         return True

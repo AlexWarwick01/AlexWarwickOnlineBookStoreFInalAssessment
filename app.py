@@ -5,6 +5,14 @@ import uuid
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Required for session management
 
+# Security configurations for session cookies
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax'
+)
+
+
 # Global storage for users and orders (in production, use a database)
 users = {}  # email -> User object
 orders = {}  # order_id -> Order object
@@ -136,6 +144,23 @@ def checkout():
     return render_template('checkout.html', cart=cart, total_price=total_price, current_user=current_user)
 
 
+def apply_discount(discount_code, cart):
+    total_amount = cart.get_total_price()
+    discount_applied = 0
+    discount_info = {
+        'total_amount': total_amount,
+        'discount_applied': discount_applied
+    }
+    # Convert discount code to uppercase for case-insensitive comparison
+    if discount_code.upper() == 'SAVE10':
+        discount_info['discount_applied'] = total_amount * 0.10
+        discount_info['total_amount'] -= discount_info['discount_applied']
+    elif discount_code.upper() == 'WELCOME20':
+        discount_info['discount_applied'] = total_amount * 0.20
+        discount_info['total_amount'] -= discount_info['discount_applied']
+   
+    return discount_info
+
 @app.route('/process-checkout', methods=['POST'])
 def process_checkout():
     """Process the checkout form with shipping and payment information"""
@@ -162,19 +187,13 @@ def process_checkout():
     discount_code = request.form.get('discount_code', '')
     
     # Calculate total with discount
-    total_amount = cart.get_total_price()
-    discount_applied = 0
-    
-    if discount_code == 'SAVE10':
-        discount_applied = total_amount * 0.10
-        total_amount -= discount_applied
-        flash(f'Discount applied! You saved ${discount_applied:.2f}', 'success')
-    elif discount_code == 'WELCOME20':
-        discount_applied = total_amount * 0.20
-        total_amount -= discount_applied
-        flash(f'Welcome discount applied! You saved ${discount_applied:.2f}', 'success')
-    elif discount_code:
-        flash('Invalid discount code', 'error')
+    discount_info = apply_discount(discount_code, cart)
+    if(discount_info['discount_applied'] == 0.10):
+         flash(f'Discount applied! You saved ${discount_info['discount_applied']:.2f}', 'success')
+    elif(discount_info['discount_applied'] == 0.20):
+         flash(f'Welcome discount applied! You saved ${discount_info['discount_applied']:.2f}', 'success')
+    elif(discount_info['discount_applied'] == 0):
+         flash('Invalid discount code', 'error')
     
     required_fields = ['name', 'email', 'address', 'city', 'zip_code']
     for field in required_fields:
@@ -205,7 +224,7 @@ def process_checkout():
             'method': payment_info['payment_method'],
             'transaction_id': payment_result['transaction_id']
         },
-        total_amount=total_amount
+        total_amount=discount_info['total_amount']
     )
     
     # Store order
