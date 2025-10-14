@@ -189,9 +189,9 @@ def process_checkout():
     # Calculate total with discount
     discount_info = apply_discount(discount_code, cart)
     if(discount_info['discount_applied'] == 0.10):
-         flash(f'Discount applied! You saved ${discount_info['discount_applied']:.2f}', 'success')
+         flash(f"Discount applied! You saved ${discount_info['discount_applied']:.2f}", 'success')
     elif(discount_info['discount_applied'] == 0.20):
-         flash(f'Welcome discount applied! You saved ${discount_info['discount_applied']:.2f}', 'success')
+         flash(f"Welcome discount applied! You saved ${discount_info['discount_applied']:.2f}", 'success')
     elif(discount_info['discount_applied'] == 0):
          flash('Invalid discount code', 'error')
     
