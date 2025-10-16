@@ -1,11 +1,14 @@
 from html import escape
+from werkzeug.security import generate_password_hash, check_password_hash
+import random
+
 class Book:
     def __init__(self, title, category, price, image):
         self.title = title
         self.category = category
         self.price = price
         self.image = image
-
+# In future Id like to add an Author class and link books to authors 
 
 class CartItem:
     def __init__(self, book, quantity=1):
@@ -49,16 +52,17 @@ class Cart:
         if book_title in self.items:
             del self.items[book_title]
 
+# Fixes two issues, one where the cart didnt update properly if 0 quantity was set
+# and the other where negative quantities could be set and completely break the cart
     def update_quantity(self, book_title, quantity):
         if book_title in self.items:
-            self.items[book_title].quantity = quantity
+            # Only update if quantity is non-negative
+            if quantity >= 0:
+                self.items[book_title].quantity = quantity
 
+# Fixes efficiency issue where total price was calculated using unnecessary loops
     def get_total_price(self):
-        total = 0
-        for item in self.items.values():
-            for i in range(item.quantity):
-                total += item.book.price
-        return total
+        return sum(item.get_total_price() for item in self.items.values())
 
     def get_total_items(self):
         return sum(item.quantity for item in self.items.values())
@@ -75,14 +79,40 @@ class Cart:
 # Adds HTML escaping for user inputs to prevent XSS
 class User:
     """User account management class"""
-    def __init__(self, email, password, name="", address=""):
-        self.email = email
-        self.password = password
+    def __init__(self, email, password, name="", address="", is_hashed=False):
+        self.email = escape(email)
+        # Hash the password if it's not already hashed
+        if is_hashed:
+            self.password_hash = escape(password)
+        else:
+            self.password_hash = generate_password_hash(password)
         self.name = escape(name)
         self.address = escape(address)
         self.orders = []
         self.temp_data = []
         self.cache = {}
+# Adds password hashing so we stop storing passwords in plain text
+# This was a nightmare to figure out and in hindsight I probably should have just documented
+# that passwords are stored in plain text for the sake of simplicity
+# but I wanted to see if I could figure it out.
+# There was alot of googling and breaking all the unit tests involved
+    def check_password(self, password):
+        """Check if the provided password matches the stored hash"""
+        return check_password_hash(self.password_hash, password)
+    
+    def set_password(self, password):
+        """Set a new password (hashes it automatically)"""
+        self.password_hash = generate_password_hash(password)
+    
+    @property
+    def password(self):
+        """Getter for backwards compatibility - raises error if accessed directly"""
+        raise AttributeError('password is not a readable attribute. Use check_password() instead.')
+    
+    @password.setter
+    def password(self, password):
+        """Setter for backwards compatibility - hashes the password"""
+        self.set_password(password)
     
     def add_order(self, order):
         self.orders.append(order)
@@ -133,11 +163,8 @@ class PaymentGateway:
                 'transaction_id': None
             }
         
-        import random
-        import time
-        import datetime
-        
-        time.sleep(0.1)
+# Removed some random imports that were sitting here unused (Random was used so moved it to the top)
+# Removed a time.sleep that was existing for no reason
         
         transaction_id = f"TXN{random.randint(100000, 999999)}"
         
@@ -153,7 +180,8 @@ class PaymentGateway:
 
 class EmailService:
     """Mock email service for sending order confirmations"""
-# Line 161-167 Have been changed due to AttributeError: 'dict' object has no attribute
+# I encountered an Dict attribute error when trying to test this
+# so had to change how the order object was accessed (changed from order.order_id to order['order_id'] for example)
     @staticmethod
     def send_order_confirmation(user_email, order):
         """Mock email sending - just prints to console in this implementation"""

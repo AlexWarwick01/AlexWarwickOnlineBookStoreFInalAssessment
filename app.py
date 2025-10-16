@@ -66,12 +66,8 @@ def index():
 def add_to_cart():
     book_title = request.form.get('title')
     quantity = int(request.form.get('quantity', 1))
-    
-    book = None
-    for b in BOOKS:
-        if b.title == book_title:
-            book = b
-            break
+    # removes the unnessary loop and replaces it with the existing helper function
+    book = get_book_by_title(book_title)
     
     if book:
         cart.add_book(book, quantity)
@@ -146,20 +142,26 @@ def checkout():
 
 def apply_discount(discount_code, cart):
     total_amount = cart.get_total_price()
-    discount_applied = 0
-    discount_info = {
-        'total_amount': total_amount,
+    
+    # Convert discount code to uppercase for case-insensitive comparison
+    discount_code_upper = discount_code.upper()
+    
+    # Map discount codes to their discount rates
+    # In an ideal world, this would be stored in a database so it could be managed via an admin interface
+    # and then cached for performance, however I was not going to invest the 10+ hours it would take to build that out for this demo
+    discount_rates = {
+        'SAVE10': 0.10,
+        'WELCOME20': 0.20
+    }
+    
+    # Calculate discount
+    discount_rate = discount_rates.get(discount_code_upper, 0)
+    discount_applied = total_amount * discount_rate
+    
+    return {
+        'total_amount': total_amount - discount_applied,
         'discount_applied': discount_applied
     }
-    # Convert discount code to uppercase for case-insensitive comparison
-    if discount_code.upper() == 'SAVE10':
-        discount_info['discount_applied'] = total_amount * 0.10
-        discount_info['total_amount'] -= discount_info['discount_applied']
-    elif discount_code.upper() == 'WELCOME20':
-        discount_info['discount_applied'] = total_amount * 0.20
-        discount_info['total_amount'] -= discount_info['discount_applied']
-   
-    return discount_info
 
 @app.route('/process-checkout', methods=['POST'])
 def process_checkout():
@@ -188,12 +190,12 @@ def process_checkout():
     
     # Calculate total with discount
     discount_info = apply_discount(discount_code, cart)
-    if(discount_info['discount_applied'] == 0.10):
-         flash(f"Discount applied! You saved ${discount_info['discount_applied']:.2f}", 'success')
-    elif(discount_info['discount_applied'] == 0.20):
-         flash(f"Welcome discount applied! You saved ${discount_info['discount_applied']:.2f}", 'success')
-    elif(discount_info['discount_applied'] == 0):
-         flash('Invalid discount code', 'error')
+    
+    # Flash message logic simplified to remove a bunch of if conditions
+    if discount_info['discount_applied'] > 0:
+        flash(f"Discount applied! You saved ${discount_info['discount_applied']:.2f}", 'success')
+    elif discount_code:  # Only show error if a code was actually entered
+        flash('Invalid discount code', 'error')
     
     required_fields = ['name', 'email', 'address', 'city', 'zip_code']
     for field in required_fields:
@@ -300,7 +302,7 @@ def login():
         password = request.form.get('password')
         
         user = users.get(email)
-        if user and user.password == password:
+        if user and user.check_password(password):
             session['user_email'] = email
             flash('Logged in successfully!', 'success')
             return redirect(url_for('index'))
@@ -337,7 +339,7 @@ def update_profile():
     
     new_password = request.form.get('new_password')
     if new_password:
-        current_user.password = new_password
+        current_user.set_password(new_password)
         flash('Password updated successfully!', 'success')
     else:
         flash('Profile updated successfully!', 'success')

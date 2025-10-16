@@ -140,7 +140,6 @@ class OnlineBookstoreTests(unittest.TestCase):
 
 
 # TC-012: Verify invalid quantity updates are handled gracefully
-    @unittest.skip("Cart does not currently handle invalid quantities, this test is skipped until validation is added.")
     def test_invalid_quantity_update_in_cart(self):
         """TC-012: Invalid quantity updates are handled gracefully."""
         book = BOOKS[0]
@@ -442,7 +441,8 @@ class OnlineBookstoreTests(unittest.TestCase):
         # Verify the original user wasn't modified
         stored_user = users['duplicate@test.com']
         self.assertEqual(stored_user.name, 'Original User')
-        self.assertEqual(stored_user.password, 'password123')
+        # Verify password by checking it matches (since passwords are now hashed)
+        self.assertTrue(stored_user.check_password('password123'))
 
 # TC-026: Verify registration fails with missing required fields
     def test_user_registration_missing_fields(self):
@@ -482,7 +482,8 @@ class OnlineBookstoreTests(unittest.TestCase):
         demo_password = "demo123"
         self.assertIn(demo_email, users)
         demo_user = users[demo_email]
-        self.assertEqual(demo_user.password, demo_password)
+        # Verify password is hashed and can be checked
+        self.assertTrue(demo_user.check_password(demo_password))
         response = self.app.post('/login', 
                                data={'email': demo_email, 'password': demo_password}, 
                                follow_redirects=True)
@@ -598,8 +599,10 @@ class OnlineBookstoreTests(unittest.TestCase):
     def test_user_cannot_see_others_order_history(self):
         """Test that a user cannot see another user's order history"""
         # Create two users
-        user1 = User("demo@bookstore1.com", "demo1234", "Demo User Uno", "1234 Demo Street, Demo City, DC 12345")
-        user2 = User("demo@bookstore2.com", "demo1235", "Demo User Dos", "1235 Demo Street, Demo City, DC 12345")
+        user1_password = "demo1234"
+        user2_password = "demo1235"
+        user1 = User("demo@bookstore1.com", user1_password, "Demo User Uno", "1234 Demo Street, Demo City, DC 12345")
+        user2 = User("demo@bookstore2.com", user2_password, "Demo User Dos", "1235 Demo Street, Demo City, DC 12345")
         users[user1.email] = user1
         users[user2.email] = user2
         # Create an order for user1
@@ -624,7 +627,7 @@ class OnlineBookstoreTests(unittest.TestCase):
         user1.add_order(test_order)
         # Log in as user2
         self.app.post('/login', 
-                      data={'email': user2.email, 'password': user2.password}, 
+                      data={'email': user2.email, 'password': user2_password}, 
                       follow_redirects=True)
         # Attempt to access user1's order confirmation page
         response = self.app.get(f'/order-confirmation/{order_id}', follow_redirects=True)
@@ -660,13 +663,15 @@ class OnlineBookstoreTests(unittest.TestCase):
     def test_user_cannot_update_others_profile(self):
         """Test that a user cannot update another user's profile"""
         # Create two users
-        user1 = User("demo@bookstore1.com", "demo1234", "Demo User Uno", "1234 Demo Street, Demo City, DC 12345")
-        user2 = User("demo@bookstore2.com", "demo1235", "Demo User Dos", "1235 Demo Street, Demo City, DC 12345")
+        user1_password = "demo1234"
+        user2_password = "demo1235"
+        user1 = User("demo@bookstore1.com", user1_password, "Demo User Uno", "1234 Demo Street, Demo City, DC 12345")
+        user2 = User("demo@bookstore2.com", user2_password, "Demo User Dos", "1235 Demo Street, Demo City, DC 12345")
         users[user1.email] = user1
         users[user2.email] = user2
         # Log in as user2
         self.app.post('/login', 
-                      data={'email': user2.email, 'password': user2.password}, 
+                      data={'email': user2.email, 'password': user2_password}, 
                       follow_redirects=True)
         # Attempt to update user1's profile by manipulating form data
         updated_info = {
@@ -836,8 +841,54 @@ class OnlineBookstoreTests(unittest.TestCase):
         finally:
             pass  # No cleanup needed
 
+# This test may not work as I intended it to.
+# TC-41: Test User login speed with cProfile using the endpoint
+    def test_user_login_speed(self):
+        """Test the speed of user login using cProfile and timeit"""
+        # Ensure the demo user exists
+        demo_email = "demo@bookstore.com"
+        demo_password = "demo123"
+        self.assertIn(demo_email, users)
+        
+        # Timeit benchmarking - using a simpler approach
+        # Create a reusable test client reference
+        client = self.app
+        login_data = {'email': demo_email, 'password': demo_password}
+        
+        # Warm-up run
+        client.post('/login', data=login_data, follow_redirects=True)
+        
+        # Run timeit benchmark with fewer iterations for reasonable test time
+        exec_time = timeit.timeit(
+            lambda: client.post('/login', data=login_data, follow_redirects=True),
+            number=50
+        )
+        print(f"\nTimeit Results:")
+        print(f"Average time over 50 runs: {exec_time/50:.6f} seconds for Login")
+        
+        # cProfile benchmarking
+        pr = cProfile.Profile()
+        pr.enable()
+        client.post('/login', data=login_data, follow_redirects=True)
+        pr.disable()
+        
+        # Create string buffer and stats object
+        s = io.StringIO()
+        ps = pstats.Stats(pr, stream=s).sort_stats('cumulative')
+        
+        # Print stats to buffer
+        print("\ncProfile Results:")
+        ps.print_stats(10)  # Limit to top 10 results
+        print(s.getvalue())
+        
+        # Performance assertions - relaxed threshold for testing environment
+        avg_time = exec_time / 50
+        print(f"Average login time: {avg_time:.6f} seconds")
+        self.assertLess(avg_time, 0.5, f"User login took more than 500ms on average: {avg_time:.6f}s")
+        
+
 # --------------------- Security Tests --------------------
-# TC-041: Verify that SQL Injection attempts are mitigated in login
+# TC-042: Verify that SQL Injection attempts are mitigated in login
     def test_sql_injection_login(self):
         """Test that SQL Injection attempts are mitigated in login"""
         sql_injection_payload = "' OR '1'='1"
@@ -851,7 +902,7 @@ class OnlineBookstoreTests(unittest.TestCase):
             with c.session_transaction() as sess:
                 self.assertNotIn('user_email', sess)
 
-# TC-042: Verify that XSS attempts are mitigated in user inputs
+# TC-043: Verify that XSS attempts are mitigated in user inputs
     def test_xss_mitigation_in_user_inputs(self):
         """Test that XSS attempts are mitigated in user inputs"""
         xss_payload = "<script>alert('XSS')</script>"
@@ -879,7 +930,7 @@ class OnlineBookstoreTests(unittest.TestCase):
         self.assertIn('&lt;', created_user.name)
         self.assertIn('&gt;', created_user.name)
 
-# TC-043: Verify Secure session cookies are set
+# TC-044: Verify Secure session cookies are set
     def test_secure_session_cookies(self):
         """Test that secure session cookies are set"""
         with self.app as c:
@@ -904,6 +955,36 @@ class OnlineBookstoreTests(unittest.TestCase):
             with c.session_transaction() as sess:
                 self.assertIn('user_email', sess, "Session was not created")
                 self.assertEqual(sess['user_email'], 'demo@bookstore.com')
+
+# TC-045: Verify passwords are stored as hashes, not plaintext
+    def test_password_hashing(self):
+        """Test that passwords are hashed and not stored in plaintext"""
+        # Create a new user with a known password
+        test_password = 'testPassword123!'
+        test_user = User('hash@test.com', test_password, 'Hash Test User', '123 Hash St')
+        users['hash@test.com'] = test_user
+        
+        # Verify password is not stored in plaintext
+        self.assertNotEqual(test_user.password_hash, test_password)
+        
+        # Verify password cannot be accessed directly
+        with self.assertRaises(AttributeError):
+            _ = test_user.password
+        
+        # Verify password can be checked correctly
+        self.assertTrue(test_user.check_password(test_password))
+        self.assertFalse(test_user.check_password('wrongPassword'))
+        
+        # Verify password can be updated
+        new_password = 'newPassword456!'
+        test_user.set_password(new_password)
+        self.assertTrue(test_user.check_password(new_password))
+        self.assertFalse(test_user.check_password(test_password))
+        
+        # Verify password hash changes when password is updated
+        old_hash = test_user.password_hash
+        test_user.set_password('anotherPassword789!')
+        self.assertNotEqual(test_user.password_hash, old_hash)
 
 if __name__ == '__main__':
     unittest.main() 

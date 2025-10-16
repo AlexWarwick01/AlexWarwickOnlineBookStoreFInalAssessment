@@ -9,6 +9,65 @@ on:
       - main
 
 jobs:
+# Security scan runs first
+# This is to catch security issues early before running tests or deployment
+  security-scan:
+    name: Security Scan (Bandit)
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install Bandit
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit[toml]
+      
+      - name: Run Bandit Security Scan
+        run: |
+          bandit -r . -f json -o bandit-report.json || true
+          bandit -r . -f txt -o bandit-report.txt || true
+          echo "================================"
+          echo "  BANDIT SECURITY SCAN RESULTS"
+          echo "================================"
+          bandit -r . -ll -f txt
+        continue-on-error: false
+      
+      - name: Upload Bandit Report
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: bandit-security-report
+          path: |
+            bandit-report.json
+            bandit-report.txt
+      
+      - name: Bandit Summary
+        if: always()
+        run: |
+          echo "## Security Scan Results (Bandit) " >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Scan Information" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tool:** Bandit (Python Security Linter)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          bandit -r . -ll -f txt | head -50 >> $GITHUB_STEP_SUMMARY || true
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Download the full report from the workflow artifacts." >> $GITHUB_STEP_SUMMARY
+
+# Runs unit tests first
+# This is to catch basic functionality issues early before running more expensive integration tests
+# Unit tests will only run if the security scan passes
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -48,11 +107,13 @@ jobs:
           flags: unittests
           name: unit-test-coverage
           fail_ci_if_error: false
-
+# Runs integration tests only if unit tests pass
+# This is to ensure that we don't waste resources running integration tests if the basic functionality is broken
+# the If: always() means that even if the job is cancelled we still get the summary of the scan
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
-    needs: unit-tests  # Only run if unit tests pass
+    needs: unit-tests 
     
     steps:
       - name: Checkout code
@@ -92,11 +153,15 @@ jobs:
           flags: integrationtests
           name: integration-test-coverage
           fail_ci_if_error: false
-
+# If all the previous steps pass
+# we simulate a deployment
+# No actual deployment takes place for 2 reasons:
+# 1. This is a mock project and there is no real infrastructure to deploy to
+# 2. I have no idea how to deploy python becasue its not Java 
   deploy:
     name: Mock Deployment
     runs-on: ubuntu-latest
-    needs: [unit-tests, integration-tests]  # Only run if both test suites pass
+    needs: [security-scan, unit-tests, integration-tests] 
     
     steps:
       - name: Checkout code
@@ -146,10 +211,13 @@ jobs:
           echo "### Deployment URL" >> $GITHUB_STEP_SUMMARY
           echo " [Staging Environment](https://staging-bookstore-${GITHUB_SHA:0:7}.example.com)" >> $GITHUB_STEP_SUMMARY
 
+ # This step will send a notification if the entire workflow succeeds or fails
+ # It gives a nice identifier on the github repository page
+ # and also emailed me every time it failed (which was annoying)
   notify-success:
     name: Notify Success
     runs-on: ubuntu-latest
-    needs: [unit-tests, integration-tests, deploy]
+    needs: [security-scan, unit-tests, integration-tests, deploy]
     if: success()
     
     steps:
@@ -160,6 +228,7 @@ jobs:
           echo "================================"
           echo ""
           echo "All stages completed successfully:"
+          echo "  Security Scan (Bandit)"
           echo "  Unit Tests"
           echo "  Integration Tests"
           echo "  Mock Deployment"
@@ -170,7 +239,7 @@ jobs:
   notify-failure:
     name: Notify Failure
     runs-on: ubuntu-latest
-    needs: [unit-tests, integration-tests, deploy]
+    needs: [security-scan, unit-tests, integration-tests, deploy]
     if: failure()
     
     steps:
