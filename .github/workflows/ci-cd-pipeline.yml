@@ -11,6 +11,9 @@ on:
 jobs:
 # Security scan runs first
 # This is to catch security issues early before running tests or deployment
+# Currently this fails because the app is ran in debug mode
+# which is a security risk
+# In a live application we would never run in debug mode in production
   security-scan:
     name: Security Scan (Bandit)
     runs-on: ubuntu-latest
