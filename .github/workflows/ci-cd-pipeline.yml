@@ -103,6 +103,9 @@ jobs:
         run: |
           python -m pytest test_app.py --cov=app --cov=models --cov-report=xml --cov-report=term
       
+    # I am unusre if this step actually works as intended
+    # it never stops the tests running but this step fails
+    # I think im missing a login of some description
       - name: Upload Unit Test Coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
@@ -148,7 +151,9 @@ jobs:
       - name: Generate Integration Test Coverage Report
         run: |
           python -m pytest test_integration.py --cov=app --cov=models --cov-report=xml --cov-report=term
-      
+    # I am unusre if this step actually works as intended
+    # it never stops the tests running but this step fails
+    # I think im missing a login of some description
       - name: Upload Integration Test Coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
